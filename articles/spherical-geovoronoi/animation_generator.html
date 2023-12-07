@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<style>
+  body {
+    background: #fcfcfa;
+    margin: 0px;
+  }
+
+  .projection-menu {
+    margin: 10px;
+    width: 25%;
+  }
+
+  .slider {
+    margin: 10px;
+    width: 40%;
+  }
+
+  .stroke {
+    fill: none;
+    stroke: #000;
+    stroke-width: 3px;
+  }
+
+  .fill {
+    fill: #fff;
+  }
+
+  .graticule {
+    fill: #fff;
+    stroke: #777;
+    stroke-width: 0.5px;
+    stroke-opacity: 0.5;
+  }
+
+  .land {
+    stroke: #fff;
+    fill: #222;
+  }
+
+  .boundary {
+    fill: none;
+    stroke: #fff;
+    stroke-width: 0.5px;
+  }
+</style>
+<select id="projection-menu1" class="projection-menu"></select>
+<select id="projection-menu2" class="projection-menu"></select>
+<input
+  type="range"
+  id="slider"
+  class="slider"
+  min="0"
+  max="10000"
+  value="0"
+  oninput="sliderInput()"
+/>
+
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-geo-projection.v1.min.js"></script>
+<script src="https://d3js.org/topojson.v2.min.js"></script>
+<script src="https://d3js.org/d3-ease.v3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.0/FileSaver.min.js" integrity="sha512-csNcFYJniKjJxRWRV1R7fvnXrycHP6qDR21mgz1ZP55xY5d+aHLfo9/FcGDQLfn2IfngbAHd8LdfsagcCqgTcQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+  var width = 800,
+    height = 800;
+
+  var options = [
+    {
+      name: "Equirectangular (Plate Carrée)",
+      projection: d3.geoEquirectangular(),
+    },
+    {
+      name: "Orthographic",
+      projection: d3.geoOrthographic().clipAngle(90).precision(0.1),
+    },
+  ];
+
+  options.forEach(function (o) {
+    o.projection.rotate([0, 0]).center([0, 0]);
+  });
+
+  d3.selectAll(".projection-menu")
+    .on("change", projectionMorph)
+    .selectAll("option")
+    .data(options)
+    .enter()
+    .append("option")
+    .text(function (d) {
+      return d.name;
+    });
+
+  var menu1 = d3
+    .select("#projection-menu1")
+    .property("value", "Equirectangular (Plate Carrée)");
+
+  var menu2 = d3.select("#projection-menu2").property("value", "Orthographic");
+
+  var posX = 90,
+    posY = 0;
+
+  var svg = d3
+    .select("body")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .call(d3.drag().on("drag", dragged));
+
+  var defs = svg.append("defs");
+
+  defs.append("path").datum({ type: "Sphere" }).attr("id", "sphere");
+
+  svg.append("use").attr("class", "stroke").attr("xlink:href", "#sphere");
+
+  svg.append("use").attr("class", "fill").attr("xlink:href", "#sphere");
+
+  var t = d3.timer(function () {});
+
+  var colors = [
+    "#1F77B4",
+    "#FF7F0E",
+    "#2CA02C",
+    "#D62728",
+    "#9467BD",
+    "#8C564B",
+    "#E377C2",
+    "#7F7F7F",
+    "#BCBD22",
+    "#17BECF",
+  ];
+
+  d3.json(
+    "https://gist.githubusercontent.com/alexmacy/082cb12c8f4d5c0d5c4445c16a3db383/raw/58e84a4f1cbbc2b76aac567af03fe9ed33aa72e8/world-110m.json",
+    function (error, world) {
+      if (error) throw error;
+
+      d3.json(
+        "https://raw.githubusercontent.com/RaczeQ/medium-articles/main/articles/spherical-geovoronoi/earth_poles_spherical_voronoi_regions.topojson",
+        function (error, spherical_regions) {
+          if (error) throw error;
+
+          svg
+            .append("path")
+            .datum(d3.geoGraticule())
+            .attr("class", "graticule");
+
+          spherical_regions.objects.collection.geometries.forEach(
+            (geometry, idx) => {
+              var tp = JSON.parse(JSON.stringify(spherical_regions));
+              tp.objects.collection.geometries = [geometry];
+              svg
+                .append("path")
+                .datum(topojson.feature(tp, tp.objects.collection))
+                .style("mix-blend-mode", "multiply")
+                .style("opacity", 0.5)
+                .style("stroke", "#222")
+                .style("fill", colors[idx]);
+            }
+          );
+
+          svg
+            .append("path")
+            .datum(topojson.feature(world, world.objects.land))
+            .attr("class", "land")
+            .style("stroke", "none");
+
+          spherical_regions.objects.collection.geometries.forEach(
+            (geometry, idx) => {
+              var tp = JSON.parse(JSON.stringify(spherical_regions));
+              tp.objects.collection.geometries = [geometry];
+              svg
+                .append("path")
+                .datum(topojson.feature(tp, tp.objects.collection))
+                .style("mix-blend-mode", "screen")
+                .style("fill", colors[idx]);
+            }
+          );
+
+          t.restart(function (elapsed) {
+            var time_period = (elapsed % 10000) / 5000;
+            var morph_progress =
+              time_period <= 1 ? time_period : 2 - time_period;
+            var eased_morph_progress = d3.easeQuad(morph_progress);
+
+            document.getElementById("slider").value =
+              eased_morph_progress * 10000;
+
+            posX = time_period * 180;
+            projectionMorph();
+          }, 100);
+        }
+      );
+    }
+  );
+
+  function sliderInput() {
+    t.stop();
+    projectionMorph();
+  }
+
+  function dragged() {
+    posX = (posX + d3.event.dx / 4) % 360;
+    posY = (posY - d3.event.dy / 4) % 360;
+    projectionMorph();
+  }
+
+  function projectionMorph() {
+    var t = d3.select("#slider").property("value") / 10000;
+
+    var projections = [menu1, menu2].map(function (p) {
+      return options.filter(function (d) {
+        return d.name == p.property("value");
+      })[0].projection;
+    });
+
+    svg.selectAll("path").attr("d", getProjection);
+
+    function getProjection(d) {
+      var projectionOne = d3.geoProjection(project);
+      var projection = projectionOne
+        .clipAngle(90)
+        .rotate([posX, posY])
+        .fitExtent(
+          [
+            [10, 10],
+            [width - 10, height - 10],
+          ],
+          {
+            type: "Sphere",
+          }
+        );
+
+      var path = d3.geoPath(projection);
+
+      function project(λ, φ) {
+        (λ *= 180 / Math.PI), (φ *= 180 / Math.PI);
+
+        var p0 = projections[0]([λ, φ]),
+          p1 = projections[1]([λ, φ]);
+
+        return [(1 - t) * p0[0] + t * p1[0], (1 - t) * -p0[1] + t * -p1[1]];
+      }
+
+      return path(d);
+    }
+  }
+</script>
