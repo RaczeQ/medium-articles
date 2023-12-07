@@ -185,7 +185,10 @@
             document.getElementById("slider").value =
               eased_morph_progress * 10000;
 
-            posX = time_period * 180;
+            var time_period_slowed = (elapsed % 20000) / 5000;
+
+            posX = time_period_slowed * 180;
+            posY = time_period_slowed * 90;
             projectionMorph();
           }, 100);
         }
